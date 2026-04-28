@@ -62,13 +62,18 @@ public class RestConfig {
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 		// @formatter:off
 		http
+				// 所有请求必须认证
 				.authorizeHttpRequests((authorize) -> authorize
 						.anyRequest().authenticated()
 				)
+				// 忽略/token请求，不做 CSRF 校验
 				.csrf((csrf) -> csrf.ignoringRequestMatchers("/token"))
 				.httpBasic(Customizer.withDefaults())
+				// 开启 Bearer Token / JWT 校验，后续请求可以带 JWT 访问受保护接口
 				.oauth2ResourceServer(OAuth2ResourceServerConfigurer::jwt)
+				// 服务端不创建 Session，完全按无状态 REST 风格处理
 				.sessionManagement((session) -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+				// 配置异常处理器 认证失败或权限不足时，返回更标准的 Bearer Token 相关错误响应
 				.exceptionHandling((exceptions) -> exceptions
 						.authenticationEntryPoint(new BearerTokenAuthenticationEntryPoint())
 						.accessDeniedHandler(new BearerTokenAccessDeniedHandler())
