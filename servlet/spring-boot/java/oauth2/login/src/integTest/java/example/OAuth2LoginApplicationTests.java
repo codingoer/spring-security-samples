@@ -140,6 +140,7 @@ class OAuth2LoginApplicationTests {
 		String requestUri = uriComponents.getScheme() + "://" + uriComponents.getHost() + uriComponents.getPath();
 		assertThat(requestUri).isEqualTo(clientRegistration.getProviderDetails().getAuthorizationUri());
 
+		// 验证授权请求参数
 		Map<String, String> params = uriComponents.getQueryParams().toSingleValueMap();
 
 		assertThat(params.get(OAuth2ParameterNames.RESPONSE_TYPE))
@@ -277,13 +278,16 @@ class OAuth2LoginApplicationTests {
 	}
 
 	private void assertLoginPage(HtmlPage page) {
+		// 验证页面标题是否是请登录
 		assertThat(page.getTitleText()).isEqualTo("Please sign in");
 
 		int expectedClients = 5;
 
+		// 页面包含五个登录链接
 		List<HtmlAnchor> clientAnchorElements = page.getAnchors();
 		assertThat(clientAnchorElements.size()).isEqualTo(expectedClients);
 
+		// 获取客户端注册信息
 		ClientRegistration googleClientRegistration = this.clientRegistrationRepository.findByRegistrationId("google");
 		ClientRegistration githubClientRegistration = this.clientRegistrationRepository.findByRegistrationId("github");
 		ClientRegistration facebookClientRegistration = this.clientRegistrationRepository
@@ -300,9 +304,11 @@ class OAuth2LoginApplicationTests {
 		String springClientAuthorizeUri = baseAuthorizeUri + springClientRegistration.getRegistrationId();
 
 		for (int i = 0; i < expectedClients; i++) {
+			// 校验授权断点
 			assertThat(clientAnchorElements.get(i).getAttribute("href")).isIn(googleClientAuthorizeUri,
 					githubClientAuthorizeUri, facebookClientAuthorizeUri, oktaClientAuthorizeUri,
 					springClientAuthorizeUri);
+			// 校验客户端名称
 			assertThat(clientAnchorElements.get(i).asNormalizedText()).isIn(googleClientRegistration.getClientName(),
 					githubClientRegistration.getClientName(), facebookClientRegistration.getClientName(),
 					oktaClientRegistration.getClientName(), springClientRegistration.getClientName());
@@ -342,25 +348,51 @@ class OAuth2LoginApplicationTests {
 		return response;
 	}
 
+	/**
+	 * 通过 Mock 方式让测试不依赖真实的 OAuth Provider（Google、GitHub 等），实现快速、可重复的集成测试
+	 */
 	@Configuration
 	@EnableWebSecurity
 	public static class SecurityTestConfig {
 
+
+		/**
+		 * 配置用于测试的安全过滤链。
+		 * <p>
+		 * 该配置启用了 OAuth2 登录功能，并使用 Mock 对象替代真实的令牌端点和用户信息服务，
+		 * 以便在测试环境中模拟 OAuth2 认证流程，无需连接实际的授权服务器。
+		 * </p>
+		 *
+		 * @param http HttpSecurity 配置对象，用于构建安全过滤链
+		 * @return 配置完成的 SecurityFilterChain 实例
+		 * @throws Exception 如果配置过程中发生错误
+		 */
 		@Bean
 		public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 			// @formatter:off
 			http
 					.authorizeHttpRequests((authorize) -> authorize
 							.anyRequest().authenticated()
-					)
+					) // 所有的请求都需要认证
 					.oauth2Login((oauth2) -> oauth2
+							// 自定义令牌端点，使用 Mock 返回固定访问令牌
 							.tokenEndpoint((token) -> token.accessTokenResponseClient(mockAccessTokenResponseClient()))
+							// 自定义用户信息端点，使用 Mock 返回模拟用户
 							.userInfoEndpoint((userInfo) -> userInfo.userService(mockUserService()))
 					);
 			// @formatter:on
 			return http.build();
 		}
 
+		/**
+		 * 创建一个模拟的 OAuth2 访问令牌响应客户端
+		 * <p>
+		 * 该方法用于测试场景，模拟授权码换取访问令牌的响应，避免真实调用 OAuth Provider。
+		 * 返回的模拟客户端会固定返回一个 Bearer 类型的访问令牌，有效期为 60 秒。
+		 * </p>
+		 *
+		 * @return 模拟的 OAuth2AccessTokenResponseClient 实例，始终返回预设的访问令牌响应
+		 */
 		private OAuth2AccessTokenResponseClient<OAuth2AuthorizationCodeGrantRequest> mockAccessTokenResponseClient() {
 			OAuth2AccessTokenResponse accessTokenResponse = OAuth2AccessTokenResponse.withToken("access-token-1234")
 				.tokenType(OAuth2AccessToken.TokenType.BEARER)
@@ -372,6 +404,15 @@ class OAuth2LoginApplicationTests {
 			return tokenResponseClient;
 		}
 
+		/**
+		 * 创建一个模拟的 OAuth2 用户服务，用于测试环境
+		 * <p>
+		 * 该方法配置一个模拟的 {@link OAuth2UserService}，当调用 {@code loadUser} 方法时
+		 * 返回一个预设的 {@link OAuth2User} 对象，包含固定的用户属性（id、姓名、邮箱等）。
+		 * 这样可以避免在测试中连接真实的 OAuth 提供商，实现快速、可重复的集成测试。
+		 *
+		 * @return 模拟的 OAuth2 用户服务，总是返回包含用户 "joeg@springsecurity.io" 的 {@link OAuth2User} 对象
+		 */
 		private OAuth2UserService<OAuth2UserRequest, OAuth2User> mockUserService() {
 			Map<String, Object> attributes = new HashMap<>();
 			attributes.put("id", "joeg");
